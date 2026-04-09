@@ -113,14 +113,29 @@ missing a churner is more expensive than a false alarm.
 ## Running locally
 
 ```bash
-git clone https://github.com/amaanzz/telco-churn-prediction-engine.git
-cd telco-churn-prediction-engine
+git clone https://github.com/amaanzz/-telco-churn-prediction-engine.git
+cd -telco-churn-prediction-engine
 
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
 ---
+## 📸 Screenshots
+
+### Dashboard
+
+![Dashboard](assets/dashboard1.png)
+![Dashboard](assets/dashboard2.png)
+
+---
+
+### Explainability
+
+![Explainability](assets/explainabilityshap.png)
+
+---
+
 
 ## What I learned
 

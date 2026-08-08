@@ -3,7 +3,7 @@
 
 An end-to-end machine learning system that predicts customer churn and, more importantly, translates those predictions into practical business actions.
 
-🔗 Live App: https://e42pk238crgmv4qgrfx29s.streamlit.app/
+🔗 Live App: https://amsaxajmqph8bhb4qfoxgy.streamlit.app/
 
 ---
 

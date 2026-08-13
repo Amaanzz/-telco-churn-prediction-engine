@@ -1,12 +1,17 @@
 import streamlit as st
 import pandas as pd
+import requests
 
-from src.preprocess import preprocess_input
-from src.predict import predict_churn
 from src.strategy import generate_retention_strategy_v2
-from src.explainability import explain_customer
 
+# -----------------------------
+# Configuration
+# -----------------------------
+API_URL = "https://telco-churn-api-urtt.onrender.com/predict"
+
+# -----------------------------
 # 1. Page Configuration
+# -----------------------------
 st.set_page_config(
     page_title="Churn Prediction Engine",
     page_icon="🔄",
@@ -16,22 +21,34 @@ st.set_page_config(
 
 st.title("Telco Customer Churn Engine")
 st.markdown("### 🚀 AI-Powered Customer Retention Intelligence System")
-st.markdown("Enter customer details below to generate real-time churn probability and actionable retention strategies.")
+st.markdown(
+    "Enter customer details below to generate real-time churn probability "
+    "and actionable retention strategies."
+)
 st.divider()
 
-# 2. Main Dashboard Layout (2 Columns)
+# -----------------------------
+# 2. Main Dashboard Layout
+# -----------------------------
 col1, col2 = st.columns([1.2, 1])
 
-# --- COLUMN 1: User Inputs ---
+# -----------------------------
+# COLUMN 1: User Inputs
+# -----------------------------
 with col1:
     st.subheader("Customer Profile")
 
     with st.form("customer_input_form"):
+
         st.markdown("**Demographics & Account History**")
         c1, c2, c3 = st.columns(3)
-        tenure = c1.slider("Tenure (Months)", min_value=0, max_value=72, value=12)
-        monthly_charges = c2.number_input("Monthly Charges ($)", min_value=15.0, max_value=120.0, value=50.0, step=1.0)
-        total_charges = c3.number_input("Total Charges ($)", min_value=0.0, max_value=9000.0, value=600.0, step=10.0)
+        tenure = c1.slider("Tenure (Months)", 0, 72, 12)
+        monthly_charges = c2.number_input(
+            "Monthly Charges ($)", 15.0, 120.0, 50.0, step=1.0
+        )
+        total_charges = c3.number_input(
+            "Total Charges ($)", 0.0, 9000.0, 600.0, step=10.0
+        )
 
         st.markdown("**Personal Details**")
         c1b, c2b, c3b = st.columns(3)
@@ -41,68 +58,112 @@ with col1:
 
         st.markdown("**Service & Contract Details**")
         c4, c5 = st.columns(2)
-        contract = c4.selectbox("Contract Type", ["Month-to-month", "One year", "Two year"])
-        payment = c5.selectbox("Payment Method", [
-            "Electronic check", "Mailed check",
-            "Bank transfer (automatic)", "Credit card (automatic)"
-        ])
+        contract = c4.selectbox(
+            "Contract Type",
+            ["Month-to-month", "One year", "Two year"]
+        )
+        payment = c5.selectbox(
+            "Payment Method",
+            [
+                "Electronic check",
+                "Mailed check",
+                "Bank transfer (automatic)",
+                "Credit card (automatic)"
+            ]
+        )
         internet = c4.selectbox("Internet Service", ["DSL", "Fiber optic", "No"])
         paperless = c5.radio("Paperless Billing", ["Yes", "No"], horizontal=True)
-        multiple_lines = c4.selectbox("Multiple Lines", ["Yes", "No", "No phone service"])
+        multiple_lines = c4.selectbox(
+            "Multiple Lines",
+            ["Yes", "No", "No phone service"]
+        )
 
-        st.markdown("**Add-on Services** *(select \"No internet service\" if no internet plan)*")
+        st.markdown(
+            "**Add-on Services** *(select 'No internet service' if no internet plan)*"
+        )
         c8, c9, c10 = st.columns(3)
-        online_security = c8.selectbox("Online Security", ["Yes", "No", "No internet service"])
-        online_backup = c9.selectbox("Online Backup", ["Yes", "No", "No internet service"])
-        device_protection = c10.selectbox("Device Protection", ["Yes", "No", "No internet service"])
-        tech_support = c8.selectbox("Tech Support", ["Yes", "No", "No internet service"])
-        streaming_tv = c9.selectbox("Streaming TV", ["Yes", "No", "No internet service"])
-        streaming_movies = c10.selectbox("Streaming Movies", ["Yes", "No", "No internet service"])
+        online_security = c8.selectbox(
+            "Online Security",
+            ["Yes", "No", "No internet service"]
+        )
+        online_backup = c9.selectbox(
+            "Online Backup",
+            ["Yes", "No", "No internet service"]
+        )
+        device_protection = c10.selectbox(
+            "Device Protection",
+            ["Yes", "No", "No internet service"]
+        )
+        tech_support = c8.selectbox(
+            "Tech Support",
+            ["Yes", "No", "No internet service"]
+        )
+        streaming_tv = c9.selectbox(
+            "Streaming TV",
+            ["Yes", "No", "No internet service"]
+        )
+        streaming_movies = c10.selectbox(
+            "Streaming Movies",
+            ["Yes", "No", "No internet service"]
+        )
 
         st.markdown("**Household Status**")
         c6, c7 = st.columns(2)
         partner = c6.radio("Has Partner", ["Yes", "No"], horizontal=True)
         dependents = c7.radio("Has Dependents", ["Yes", "No"], horizontal=True)
 
-        submit_button = st.form_submit_button("Analyze Churn Risk", use_container_width=True)
+        submit_button = st.form_submit_button(
+            "Analyze Churn Risk",
+            use_container_width=True
+        )
 
-# --- COLUMN 2: Output & Strategy ---
+# -----------------------------
+# COLUMN 2: Output
+# -----------------------------
 with col2:
     st.subheader("Predictive Analytics")
 
     if submit_button:
-        # Construct the raw data dictionary — must cover all 19 raw fields
-        # the pipeline's preprocessor was fit on, not a subset
+
         raw_data = {
-            'gender': gender,
-            'SeniorCitizen': 1 if senior_citizen == "Yes" else 0,
-            'Partner': partner,
-            'Dependents': dependents,
-            'tenure': tenure,
-            'PhoneService': phone_service,
-            'MultipleLines': multiple_lines,
-            'InternetService': internet,
-            'OnlineSecurity': online_security,
-            'OnlineBackup': online_backup,
-            'DeviceProtection': device_protection,
-            'TechSupport': tech_support,
-            'StreamingTV': streaming_tv,
-            'StreamingMovies': streaming_movies,
-            'Contract': contract,
-            'PaperlessBilling': paperless,
-            'PaymentMethod': payment,
-            'MonthlyCharges': monthly_charges,
-            'TotalCharges': total_charges,
+            "gender": gender,
+            "SeniorCitizen": 1 if senior_citizen == "Yes" else 0,
+            "Partner": partner,
+            "Dependents": dependents,
+            "tenure": tenure,
+            "PhoneService": phone_service,
+            "MultipleLines": multiple_lines,
+            "InternetService": internet,
+            "OnlineSecurity": online_security,
+            "OnlineBackup": online_backup,
+            "DeviceProtection": device_protection,
+            "TechSupport": tech_support,
+            "StreamingTV": streaming_tv,
+            "StreamingMovies": streaming_movies,
+            "Contract": contract,
+            "PaperlessBilling": paperless,
+            "PaymentMethod": payment,
+            "MonthlyCharges": monthly_charges,
+            "TotalCharges": total_charges,
         }
 
-        with st.spinner("Running prediction and business intelligence engine......"):
-            try:
-                # Execute pipeline — preprocess_input now returns an engineered
-                # DataFrame; encoding + scaling happen inside pipeline.pkl itself
-                engineered_df = preprocess_input(raw_data)
-                probability = predict_churn(engineered_df)
+        with st.spinner("Running prediction and business intelligence engine..."):
 
-                # Generate EV-based retention strategy (Phase 3 upgrade)
+            try:
+                # -----------------------------
+                # Call deployed FastAPI backend
+                # -----------------------------
+                response = requests.post(API_URL, json=raw_data, timeout=30)
+                response.raise_for_status()
+
+                result = response.json()
+
+                # Adjust this key if your API returns a different field name
+                probability = result["churn_probability"]
+
+                # -----------------------------
+                # Generate EV-based strategy
+                # -----------------------------
                 strategy = generate_retention_strategy_v2(
                     probability=probability,
                     monthly_charges=monthly_charges,
@@ -111,44 +172,46 @@ with col2:
                     is_senior_citizen=(senior_citizen == "Yes"),
                 )
 
-                # 1. Display Probability
+                # -----------------------------
+                # Display Probability
+                # -----------------------------
                 st.markdown("### Predicted Churn Probability")
                 st.progress(float(probability))
-                st.markdown(f"<h2 style='text-align: center;'>{probability * 100:.1f}%</h2>", unsafe_allow_html=True)
+                st.markdown(
+                    f"<h2 style='text-align: center;'>{probability * 100:.1f}%</h2>",
+                    unsafe_allow_html=True
+                )
 
                 st.divider()
 
-                # 2. Expected Value Tier & Risk Assessment
+                # -----------------------------
+                # Expected Value Assessment
+                # -----------------------------
                 st.markdown("### Expected Value Assessment")
                 m1, m2, m3 = st.columns(3)
 
                 with m1:
-                    tier = strategy['tier']
-                    ev = strategy['expected_value']
+                    tier = strategy["tier"]
+                    ev = strategy["expected_value"]
 
                     if tier == "high_value":
                         st.success(
-                            f"💎 High-Value Customer\n\n"
-                            f"Expected Value\n\n"
-                            f"${ev:.2f}"
+                            f"💎 High-Value Customer\n\nExpected Value\n\n${ev:.2f}"
                         )
-
                     elif tier == "standard":
                         st.info(
-                            f"📊 Standard Intervention\n\n"
-                            f"Expected Value\n\n"
-                            f"${ev:.2f}"
+                            f"📊 Standard Intervention\n\nExpected Value\n\n${ev:.2f}"
                         )
-
                     else:
                         st.warning(
-                            f"⚪ Monitor Only\n\n"
-                            f"Expected Value\n\n"
-                            f"${ev:.2f}"
+                            f"⚪ Monitor Only\n\nExpected Value\n\n${ev:.2f}"
                         )
 
                 with m2:
-                    st.metric("Churn Probability", f"{probability * 100:.1f}%")
+                    st.metric(
+                        "Churn Probability",
+                        f"{probability * 100:.1f}%"
+                    )
 
                 with m3:
                     st.metric(
@@ -157,55 +220,47 @@ with col2:
                     )
 
                 st.caption(
-                    "Expected Value (EV) estimates the financial benefit of a retention intervention "
-                    "using predicted churn probability, estimated customer lifetime value, offer success "
-                    "rate, and intervention cost."
+                    "Expected Value (EV) estimates the financial benefit of a "
+                    "retention intervention using predicted churn probability, "
+                    "estimated customer lifetime value, offer success rate, "
+                    "and intervention cost."
                 )
 
-                # Senior citizen warning if applicable
-                if strategy['senior_warning']:
+                if strategy["senior_warning"]:
                     st.warning(
-                        "⚠️ **Senior Citizen Alert**: This customer is in a high-churn-risk demographic (41.7% vs. 23.7%). "
-                        "Prioritize empathetic communication and simplified service packages."
+                        "⚠️ **Senior Citizen Alert**: This customer is in a "
+                        "high-churn-risk demographic (41.7% vs. 23.7%). "
+                        "Prioritize empathetic communication and simplified "
+                        "service packages."
                     )
 
                 st.divider()
 
-                # 3. Display Strategy
+                # -----------------------------
+                # Recommended Action
+                # -----------------------------
                 st.markdown("### Recommended Action")
-                st.write(strategy['action'])
+                st.write(strategy["action"])
 
                 st.divider()
 
-                # 4. Explainability — real SHAP, not a coefficient approximation
-                with st.expander("🔍 Why this prediction? (Explainability)"):
-                    st.markdown(
-                        """
-                    SHAP values quantify how each feature contributes to this customer's predicted churn probability.
+                # -----------------------------
+                # Explainability
+                # -----------------------------
+                st.info(
+                    "Explainability is currently available in the local version "
+                    "of the application. The deployed API is being used for "
+                    "prediction only."
+                )
 
-                    - Positive values increase predicted churn risk.
-                    - Negative values reduce predicted churn risk.
-                    """
-                    )
-
-                    shap_values, base_value, feature_names = explain_customer(engineered_df)
-
-                    impact_df = pd.DataFrame({
-                        'Feature': feature_names,
-                        'Impact': shap_values
-                    })
-                    impact_df = impact_df[impact_df['Impact'] != 0]
-                    impact_df['Absolute Impact'] = impact_df['Impact'].abs()
-                    impact_df = impact_df.sort_values(by='Absolute Impact', ascending=False).head(8)
-                    impact_df.set_index('Feature', inplace=True)
-
-                    st.bar_chart(impact_df['Impact'], color="#ff4b4b", height=300)
-
-                    st.caption(
-                        "Feature contributions computed using SHAP. Positive values increase the predicted churn risk, while negative values reduce it."
-                    )
+            except requests.exceptions.RequestException as e:
+                st.error(f"API Connection Error: {str(e)}")
 
             except Exception as e:
-                st.error(f"Pipeline Error: {str(e)}")
+                st.error(f"Application Error: {str(e)}")
+
     else:
-        st.info("Awaiting customer data. Fill out the profile on the left and click 'Analyze Churn Risk'.")
+        st.info(
+            "Awaiting customer data. Fill out the profile on the left and click "
+            "'Analyze Churn Risk'."
+        )

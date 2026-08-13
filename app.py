@@ -125,26 +125,27 @@ with col2:
 
     if submit_button:
 
+
         raw_data = {
             "gender": gender,
-            "SeniorCitizen": 1 if senior_citizen == "Yes" else 0,
-            "Partner": partner,
-            "Dependents": dependents,
+            "senior_citizen": 1 if senior_citizen == "Yes" else 0,
+            "partner": partner,
+            "dependents": dependents,
             "tenure": tenure,
-            "PhoneService": phone_service,
-            "MultipleLines": multiple_lines,
-            "InternetService": internet,
-            "OnlineSecurity": online_security,
-            "OnlineBackup": online_backup,
-            "DeviceProtection": device_protection,
-            "TechSupport": tech_support,
-            "StreamingTV": streaming_tv,
-            "StreamingMovies": streaming_movies,
-            "Contract": contract,
-            "PaperlessBilling": paperless,
-            "PaymentMethod": payment,
-            "MonthlyCharges": monthly_charges,
-            "TotalCharges": total_charges,
+            "phone_service": phone_service,
+            "multiple_lines": multiple_lines,
+            "internet_service": internet,
+            "online_security": online_security,
+            "online_backup": online_backup,
+            "device_protection": device_protection,
+            "tech_support": tech_support,
+            "streaming_tv": streaming_tv,
+            "streaming_movies": streaming_movies,
+            "contract": contract,
+            "paperless_billing": paperless,
+            "payment_method": payment,
+            "monthly_charges": monthly_charges,
+            "total_charges": total_charges,
         }
 
         with st.spinner("Running prediction and business intelligence engine..."):

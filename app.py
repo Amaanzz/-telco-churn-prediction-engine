@@ -7,8 +7,12 @@ from src.strategy import generate_retention_strategy_v2
 # -----------------------------
 # Configuration
 # -----------------------------
-API_URL = "https://telco-churn-api-urtt.onrender.com/predict"
+import os
 
+API_URL = os.getenv(
+    "API_URL",
+    "https://telco-churn-api-urtt.onrender.com/predict"
+)
 # -----------------------------
 # 1. Page Configuration
 # -----------------------------

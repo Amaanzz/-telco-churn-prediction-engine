@@ -2,7 +2,7 @@
 FastAPI REST API for Telco Churn Prediction
 
 Endpoints:
-- POST /predict — Get churn probability + EV tier + retention strategy
+- POST /predict — Get churn probability + EV tier + retention strategy + SHAP explainability
 - GET /health — Health check + model info
 - GET /metrics — Model performance metrics
 
@@ -20,11 +20,9 @@ Then:
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, validator
-from typing import Dict, Any, Optional
-import pandas as pd
+from pydantic import BaseModel, Field
+from typing import Dict, Any, Optional, List
 from pathlib import Path
-import joblib
 import logging
 
 from src.preprocess import preprocess_input
@@ -105,7 +103,7 @@ class CustomerInput(BaseModel):
         }
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dict for preprocessing."""
+        """Convert to dict with the PascalCase keys preprocess_input() expects."""
         return {
             'gender': self.gender,
             'SeniorCitizen': self.senior_citizen,
@@ -129,8 +127,16 @@ class CustomerInput(BaseModel):
         }
 
 
+class ExplainabilityResponse(BaseModel):
+    """SHAP explainability payload for a single prediction."""
+
+    base_value: float = Field(..., description="SHAP base value (expected model output)")
+    feature_names: List[str] = Field(..., description="Feature names, aligned with shap_values")
+    shap_values: List[float] = Field(..., description="Per-feature SHAP contribution to this prediction")
+
+
 class PredictionResponse(BaseModel):
-    """Prediction response with churn risk and retention strategy."""
+    """Prediction response with churn risk, retention strategy, and explainability."""
 
     churn_probability: float = Field(..., description="Probability of churn (0-1)")
     churn_percentage: str = Field(..., description="Churn probability as percentage")
@@ -139,6 +145,9 @@ class PredictionResponse(BaseModel):
     retention_action: str = Field(..., description="Recommended retention action")
     senior_citizen_alert: bool = Field(..., description="Whether customer is senior citizen")
     customer_value: str = Field(..., description="Customer value: High or Standard")
+    explainability: Optional[ExplainabilityResponse] = Field(
+        None, description="SHAP feature contributions for this prediction, if available"
+    )
 
 
 class HealthResponse(BaseModel):
@@ -176,14 +185,8 @@ def root():
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 def health_check() -> HealthResponse:
-    """
-    Health check endpoint.
-
-    Returns:
-        HealthResponse with API and model status
-    """
+    """Health check endpoint."""
     try:
-        # Try to load pipeline
         pipeline_path = Path(__file__).parent.parent / "models" / "pipeline.pkl"
         pipeline_loaded = pipeline_path.exists()
 
@@ -208,54 +211,27 @@ def health_check() -> HealthResponse:
 
 @app.get("/metrics", response_model=MetricsResponse, tags=["Metrics"])
 def model_metrics() -> MetricsResponse:
-    """
-    Get model performance metrics.
-
-    Returns:
-        MetricsResponse with Phase 1 evaluation results
-    """
+    """Get model performance metrics."""
     return MetricsResponse(
-        auc_roc=0.822,  # From Phase 1 notebook
-        brier_score=0.1386,  # From Phase 1 calibration
-        threshold_optimal=0.09,  # Cost-optimal threshold
-        conformal_coverage=0.908,  # From Phase 2
-        test_set_size=1407,  # IBM Telco test set
+        auc_roc=0.822,
+        brier_score=0.1386,
+        threshold_optimal=0.09,
+        conformal_coverage=0.908,
+        test_set_size=1407,
     )
 
 
 @app.post("/predict", response_model=PredictionResponse, tags=["Prediction"])
 def predict(customer: CustomerInput) -> PredictionResponse:
     """
-    Predict churn and generate retention strategy.
-
-    Args:
-        customer: Customer data (see schema)
+    Predict churn, generate retention strategy, and compute SHAP explainability.
 
     Returns:
-        PredictionResponse with churn probability, EV tier, and action
-
-    Example:
-        POST /predict
-        {
-            "gender": "Male",
-            "senior_citizen": 0,
-            "partner": "Yes",
-            ...
-        }
-
-        Returns:
-        {
-            "churn_probability": 0.61,
-            "churn_percentage": "61.0%",
-            "ev_tier": "high_value",
-            "expected_value": 486.65,
-            "retention_action": "🎯 **High-Value Intervention**...",
-            "senior_citizen_alert": false,
-            "customer_value": "High"
-        }
+        PredictionResponse with churn probability, EV tier, action, and
+        per-feature SHAP contributions (when explainability succeeds).
     """
     try:
-        # Convert to dict and preprocess
+        # Convert to dict (PascalCase) and preprocess
         customer_dict = customer.to_dict()
         engineered_df = preprocess_input(customer_dict)
 
@@ -274,6 +250,19 @@ def predict(customer: CustomerInput) -> PredictionResponse:
         # Determine customer value
         customer_value = "High" if customer.monthly_charges > 70.35 else "Standard"
 
+        # SHAP explainability — wrapped so a SHAP failure never breaks the
+        # core prediction response, it just omits the explainability field
+        explainability = None
+        try:
+            shap_values, base_value, feature_names = explain_customer(engineered_df)
+            explainability = ExplainabilityResponse(
+                base_value=float(base_value),
+                feature_names=feature_names,
+                shap_values=[float(v) for v in shap_values],
+            )
+        except Exception as shap_error:
+            logger.warning(f"SHAP explainability failed: {str(shap_error)}")
+
         return PredictionResponse(
             churn_probability=round(probability, 4),
             churn_percentage=f"{probability * 100:.1f}%",
@@ -282,6 +271,7 @@ def predict(customer: CustomerInput) -> PredictionResponse:
             retention_action=strategy['action'],
             senior_citizen_alert=strategy['senior_warning'],
             customer_value=customer_value,
+            explainability=explainability,
         )
 
     except Exception as e:
@@ -293,16 +283,8 @@ def predict(customer: CustomerInput) -> PredictionResponse:
 
 
 @app.post("/batch-predict", tags=["Prediction"])
-def batch_predict(customers: list[CustomerInput]) -> list[Dict[str, Any]]:
-    """
-    Predict churn for multiple customers (batch).
-
-    Args:
-        customers: List of customer data
-
-    Returns:
-        List of prediction responses
-    """
+def batch_predict(customers: List[CustomerInput]) -> List[Dict[str, Any]]:
+    """Predict churn for multiple customers (batch)."""
     results = []
     for customer in customers:
         try:

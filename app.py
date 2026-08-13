@@ -125,7 +125,6 @@ with col2:
 
     if submit_button:
 
-
         raw_data = {
             "gender": gender,
             "senior_citizen": 1 if senior_citizen == "Yes" else 0,
@@ -165,13 +164,12 @@ with col2:
                 # -----------------------------
                 # Generate EV-based strategy
                 # -----------------------------
-                strategy = generate_retention_strategy_v2(
-                    probability=probability,
-                    monthly_charges=monthly_charges,
-                    contract_type=contract,
-                    tenure=tenure,
-                    is_senior_citizen=(senior_citizen == "Yes"),
-                )
+                strategy = {
+                    "tier": result["ev_tier"],
+                    "expected_value": result["expected_value"],
+                    "action": result["retention_action"],
+                    "senior_warning": result["senior_citizen_alert"],
+                }
 
                 # -----------------------------
                 # Display Probability
@@ -248,11 +246,33 @@ with col2:
                 # -----------------------------
                 # Explainability
                 # -----------------------------
-                st.info(
-                    "Explainability is currently available in the local version "
-                    "of the application. The deployed API is being used for "
-                    "prediction only."
-                )
+                if "explainability" in result and result["explainability"] is not None:
+                    exp = result["explainability"]
+
+                    impact_df = pd.DataFrame({
+                        "Feature": exp["feature_names"],
+                        "Impact": exp["shap_values"]
+                    })
+
+                    impact_df = impact_df[impact_df["Impact"] != 0]
+                    impact_df["Absolute Impact"] = impact_df["Impact"].abs()
+                    impact_df = impact_df.sort_values(
+                        by="Absolute Impact",
+                        ascending=False
+                    ).head(8)
+                    impact_df.set_index("Feature", inplace=True)
+
+                    with st.expander("🔍 Why this prediction? (Explainability)"):
+                        st.bar_chart(impact_df["Impact"], color="#ff4b4b", height=300)
+                        st.caption(
+                            "Feature contributions computed using SHAP. "
+                            "Positive values increase churn risk, negative values reduce it."
+                        )
+                else:
+                    st.info(
+                        "Explainability data was not returned by the API for "
+                        "this prediction."
+                    )
 
             except requests.exceptions.RequestException as e:
                 st.error(f"API Connection Error: {str(e)}")
